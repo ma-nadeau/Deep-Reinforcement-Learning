@@ -1,23 +1,22 @@
 #!/bin/bash
-#SBATCH --job-name=rl_experiment
+#
+#SBATCH -p all # partition (queue)
+#SBATCH -c 4 # number of cores
+#SBATCH --mem=50G
 #SBATCH --propagate=NONE # IMPORTANT for long jobs
-#SBATCH --account=winter2025-comp579
-#SBATCH --qos=comp579-0gpu-4cpu-72h
-#SBATCH --time=72:00:00
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=16GB
+#SBATCH -t 1-00:00 # time (D-HH:MM)
 #SBATCH --output=experiment_output.log
 #SBATCH --error=experiment_error.log
+#SBATCH --qos=comp579-0gpu-4cpu-72h
+#SBATCH --account=winter2025-comp579
 
-# Load necessary modules
-module load slurm
-PYTHON_EXEC=$(which python3)
-# Upgrade pip and install dependencies
-$PYTHON_EXEC -m pip install --user --upgrade pip --no-warn-script-location
-$PYTHON_EXEC -m pip install --user numpy torch gym[accept-rom-license] gym[atari] matplotlib 
-# Navigate to the COMP579 directory
-cd ../../Deep-Reinforcement-Learning/Code/
-# Run the Python script
+# module load miniconda/miniconda-winter2025
+module load miniconda/miniconda-fall2024
 
-$PYTHON_EXEC code.py
+pip cache purge
+
+# Install required dependencies
+pip install -r requirements.txt
+
+
+python ../../Deep-Reinforcement-Learning/Code/a3.py
