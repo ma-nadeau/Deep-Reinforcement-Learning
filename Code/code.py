@@ -7,6 +7,9 @@ import random
 from collections import deque
 import matplotlib.pyplot as plt # type: ignore
 
+print("\n\n\n==================================\n\n\n")
+print("Code Running")
+print("\n\n\n==================================\n\n\n")
 class QNetwork(nn.Module):
     # Q-Network
     def __init__(self, state_dim, action_dim, hidden_dim=256, num_layers=2):
