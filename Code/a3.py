@@ -7,9 +7,13 @@ import random
 from collections import deque
 import matplotlib.pyplot as plt # type: ignore
 
-print("\n\n\n==================================\n\n\n")
+
+print("\n\n\n==========================================================\n\n\n")
+
 print("Code Running")
-print("\n\n\n==================================\n\n\n")
+
+print("\n\n\n==========================================================\n\n\n")
+
 
 class QNetwork(nn.Module):
     # Q-Network
@@ -78,36 +82,8 @@ class ExpectedSarsaAgent:
             return random.randint(0, self.action_dim - 1)
         else:
             with torch.no_grad():
-                if isinstance(state, tuple):  
-                    state = state[0]
                 q_values = self.q_network(torch.tensor(state, dtype=torch.float32))
                 return q_values.argmax().item()
-    
-    def update(self, state, action, reward, next_state, done):
-        # convert to tensors
-        if isinstance(state, tuple):  
-            state = state[0]
-        state = torch.FloatTensor(state)
-        next_state = torch.FloatTensor(next_state)
-        action = torch.tensor(action)
-        reward = torch.tensor(reward)
-
-        done = torch.tensor(done, dtype=torch.float32) # 1 if done, 0 otherwise
-        
-        q_values = self.q_network(state) # Q-values
-        q_value = q_values[action] # Q-value of the action taken
-        next_q_values = self.q_network(next_state).detach() # Q-values of the next state
-        
-        # E[Q(s', a')] = (1 - epsilon) * max_a' Q(s', a') + epsilon * sum_a' Q(s', a') / |A|
-        expected_q = (1 - self.epsilon) * next_q_values.max() + self.epsilon * next_q_values.mean() 
-        target = reward + (1 - done) * self.gamma * expected_q # target = r + gamma * E[Q(s', a')]
-        
-        loss = nn.MSELoss()(q_value, target) # = (q_value - target) ** 2
-        
-        self.optimizer.zero_grad() # reset gradients
-        loss.backward() # backpropagation
-        self.optimizer.step() # update weights
-
     
     def update(self, state, action, reward, next_state, done):
         # convert to tensors
@@ -150,7 +126,7 @@ class QLearningAgent:
             
     def update(self, state, action, reward, next_state, done):
         # convert to tensors
-        state = torch.FloatTensor(state[0])
+        state = torch.FloatTensor(state)
         next_state = torch.FloatTensor(next_state)
         action = torch.tensor(action)
         reward = torch.tensor(reward)
@@ -171,9 +147,8 @@ class QLearningAgent:
         self.optimizer.step() # update the weights
 
 
-
 # Common training function for QLearning and ExpectedSarsa Agents
-def train(env_name, agent_class, episodes=1000, epsilon=0.1, lr=0.01, trials=50):
+def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
     env = gym.make(env_name)
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
@@ -188,7 +163,7 @@ def train(env_name, agent_class, episodes=1000, epsilon=0.1, lr=0.01, trials=50)
             done = False
             while not done:
                 action = agent.select_action(state)
-                next_state, reward, done, _, _ = env.step(action)
+                next_state, reward, done, _ = env.step(action)
                 agent.update(state, action, reward, next_state, done)
                 state = next_state
                 total_reward += reward
@@ -197,67 +172,44 @@ def train(env_name, agent_class, episodes=1000, epsilon=0.1, lr=0.01, trials=50)
     
     env.close()
     return np.mean(all_rewards, axis=0), np.std(all_rewards, axis=0)
-
-epsilons = [0.01, 0.001, 0.0001]
-learning_rates = [0.25, 0.125, 0.0625]
-
+epsilons = [0.01 ] #, 0.001, 0.0001]
+learning_rates = [0.25] #, 0.125, 0.0625]
 
 # Function for plotting results
 def plot_results(results_q, results_esarsa, env_name, use_replay):
-    plt.figure(figsize=(12, 6))
-    for (epsilon, lr), (q_mean, q_std) in results_q.items():
-        linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
-        plt.plot(q_mean, label=f"Q-Learning ε={epsilon}, α={lr}", color='green', linestyle=linestyle)
-        plt.fill_between(range(len(q_mean)), q_mean - q_std, q_mean + q_std, color='green', alpha=0.3)
-    for (epsilon, lr), (esarsa_mean, esarsa_std) in results_esarsa.items():
-        linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
-        plt.plot(esarsa_mean, label=f"Expected SARSA ε={epsilon}, α={lr}", color='red', linestyle=linestyle)
-        plt.fill_between(range(len(esarsa_mean)), esarsa_mean - esarsa_std, esarsa_mean + esarsa_std, color='red', alpha=0.3)
+        plt.figure(figsize=(12, 6))
+        for (epsilon, lr), (q_mean, q_std) in results_q.items():
+            linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
+            plt.plot(q_mean, label=f"Q-Learning ε={epsilon}, α={lr}", color='green', linestyle=linestyle)
+            plt.fill_between(range(len(q_mean)), q_mean - q_std, q_mean + q_std, color='green', alpha=0.3)
+        for (epsilon, lr), (esarsa_mean, esarsa_std) in results_esarsa.items():
+            linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
+            plt.plot(esarsa_mean, label=f"Expected SARSA ε={epsilon}, α={lr}", color='red', linestyle=linestyle)
+            plt.fill_between(range(len(esarsa_mean)), esarsa_mean - esarsa_std, esarsa_mean + esarsa_std, color='red', alpha=0.3)
         
-    plt.xlabel("Episodes")
-    plt.ylabel("Total Reward")
-    plt.title(f"{env_name} {'with' if use_replay else 'without'} Replay Buffer")
-    plt.legend()
-    plt.savefig("../Results/test.png")
+        plt.xlabel("Episodes")
+        plt.ylabel("Total Reward")
+        plt.title(f"{env_name} {'with' if use_replay else 'without'} Replay Buffer")
+        plt.legend()
+        plt.savefig("../Results/test.png")
 
-
-
-
-epsilons = [0.01 ]#, 0.001, 0.0001] # https://edstem.org/us/courses/71533/discussion/6304331
-learning_rates = [0.25 ] #, 0.125, 0.0625]
-environments = ["Acrobot-v1", "ALE/Assault-v5"]
-agent_classes = [ ExpectedSarsaAgent, QLearningAgent ]
-use_replay_options = [False, True]
-
-# env = gym.make("Acrobot-v1", render_mode="human") 
-env = gym.make("Acrobot-v1", render_mode="human")
-
-state, _ = env.reset()
-
-for _ in range(200):  # Run for a few steps to visualize
-    action = env.action_space.sample()  # Take a random action
-    state, reward, done, _, _ = env.step(action)
-    env.render()
-
-    if done:
-        state, _ = env.reset()
-print("rendered")
-
-
-# Function for running experiments
+    # Function for running experiments
 def run_experiment(environments, agent_classes, use_replay_options):
-    for env_name in environments:
-        for use_replay in use_replay_options:
-            results_q = {}
-            results_esarsa = {}
-            for epsilon in epsilons:
-                for lr in learning_rates:
-                    # train Q-Learning and Expected SARSA agents
-                    q_mean, q_std = train(env_name, agent_classes[0], epsilon=epsilon, lr=lr, episodes=1000, trials=10)
-                    esarsa_mean, esarsa_std = train(env_name, agent_classes[1], epsilon=epsilon, lr=lr, episodes=1000, trials=10)
-                        
-                    results_q[(epsilon, lr)] = (q_mean, q_std)
-                    results_esarsa[(epsilon, lr)] = (esarsa_mean, esarsa_std)
-        plot_results(results_q, results_esarsa, env_name, use_replay)
+        for env_name in environments:
+            for use_replay in use_replay_options:
+                results_q = {}
+                results_esarsa = {}
+                for epsilon in epsilons:
+                    for lr in learning_rates:
+                        q_mean, q_std = train(env_name, agent_classes[0], epsilon=epsilon, lr=lr, episodes=1000, trials=50)
+                        esarsa_mean, esarsa_std = train(env_name, agent_classes[1], epsilon=epsilon, lr=lr, episodes=1000, trials=50)
+                        results_q[(epsilon, lr)] = (q_mean, q_std)
+                        results_esarsa[(epsilon, lr)] = (esarsa_mean, esarsa_std)
+                plot_results(results_q, results_esarsa, env_name, use_replay)
 
-run_experiment(environments, agent_classes, use_replay_options)
+    # Running experiments
+if __name__ == "__main__":
+        environments = ["Acrobot-v1", "ALE/Assault-ram-v5"]
+        agent_classes = [QLearningAgent, ExpectedSarsaAgent]
+        use_replay_options = [False, True]
+        run_experiment(environments, agent_classes, use_replay_options)
