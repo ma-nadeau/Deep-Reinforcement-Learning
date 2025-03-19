@@ -35,34 +35,14 @@ class QNetwork(nn.Module):
         """
         super(QNetwork, self).__init__()
         
-        layers = []
-        # input layer
-        layers.append(nn.Linear(state_dim, hidden_dim))
-        layers.append(nn.ReLU())
-        # hidden layers
-        for _ in range(num_layers - 1):
-            layers.append(nn.Linear(hidden_dim, hidden_dim))
-            layers.append(nn.ReLU())
+        self.layer1 = nn.Linear(state_dim, hidden_dim)
+        self.layer2 = nn.Linear(hidden_dim, hidden_dim)
+        self.layer3 = nn.Linear(hidden_dim, action_dim)
         
-        # output layer
-        layers.append(nn.Linear(hidden_dim, action_dim))
-        # set model
-        self.model = nn.Sequential(*layers)
-        # initialize weights
-        self.initialize_weights()
-    
-    # initialize weights
-    def initialize_weights(self, initial_weights=0.001):
-        """Initialize Weights
-
-        Args:
-            initial_weights (float, optional): Initial range for uniform weight initialization. Defaults to 0.001.
-        """
-        for m in self.model:
-            if isinstance(m, nn.Linear):
-                nn.init.uniform_(m.weight, -initial_weights, initial_weights)
-                nn.init.uniform_(m.bias, -initial_weights, initial_weights)
-    
+        nn.init.uniform_(self.layer1.weight, -0.001, 0.001)
+        nn.init.uniform_(self.layer2.weight, -0.001, 0.001)
+        nn.init.uniform_(self.layer3.weight, -0.001, 0.001)
+        
     # forward pass
     def forward(self, x):
         """
@@ -74,7 +54,11 @@ class QNetwork(nn.Module):
         Returns:
             torch.Tensor: Output Q-values tensor.
         """
-        return self.model(x)
+        x = torch.relu(self.layer1(x))
+        x = torch.relu(self.layer2(x))
+        x = self.layer3(x)
+        return x
+
 
 ############################################################################################################
     
@@ -183,6 +167,7 @@ class ExpectedSarsaAgent:
         done = torch.tensor(done, dtype=torch.float32) # 1 if done, 0 otherwise
         
         q_values = self.q_network(state) # Q-values
+
         q_value = q_values[action] # Q-value of the action taken
         next_q_values = self.q_network(next_state).detach() # Q-values of the next state
         
@@ -381,6 +366,8 @@ def plot_results(results_q, results_esarsa, env_name, use_replay, epsilon, lr):
     os.makedirs(results_dir, exist_ok=True)
 
     # Construct unique filename dynamically
+    if env_name == "ALE/Assault-ram-v5":
+        env_name = "Assault-ram-v5"
     filename = f"{env_name}_{'replay' if use_replay else 'no_replay'}_eps{epsilon}_lr{lr}.png"
     filepath = os.path.join(results_dir, filename)
 
