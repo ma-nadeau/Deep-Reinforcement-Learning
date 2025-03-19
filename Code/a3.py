@@ -274,7 +274,7 @@ class QLearningAgent:
 ############################################################################################################
 
 # Common training function for QLearning and ExpectedSarsa Agents
-def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
+def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1, use_replay=False, batch_size=64):
     """
     Train a reinforcement learning agent in a specified environment.
 
@@ -285,6 +285,8 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
         epsilon (float, optional): The exploration rate for the agent. Defaults to 0.1.
         lr (float, optional): The learning rate for the agent. Defaults to 0.01.
         trials (int, optional): The number of trials to run. Defaults to 1.
+        use_replay (bool, optional): A flag indicating whether to use a replay buffer. Defaults to False.
+    Return: 
         tuple: A tuple containing the mean and standard deviation of rewards across trials.
     """
     env = gym.make(env_name)
@@ -294,19 +296,34 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
     all_rewards = []
     for trial in tqdm(range(trials), desc="Trials"):
         agent = agent_class(state_dim, action_dim, lr=lr, epsilon=epsilon)
+        buffer = ReplayBuffer() if use_replay else None
         rewards = []
         for episode in range(episodes):
-            state = env.reset()
+            state, _ = env.reset()
             total_reward = 0
             done = False
             while not done:
                 if isinstance(state, tuple):
                     state = state[0]
                 action = agent.select_action(state)
-                next_state, reward, done, _, _ = env.step(action)
-                agent.update(state, action, reward, next_state, done)
-                state = next_state
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
                 total_reward += reward
+
+                if use_replay:
+                    buffer.push(state, action, reward, next_state, done)
+                    state = next_state
+
+                    # Only update if enough samples are in the buffer
+                    if len(buffer) >= batch_size:
+                        s_batch, a_batch, r_batch, ns_batch, d_batch = buffer.sample(batch_size)
+                        agent.batch_update(s_batch, a_batch, r_batch, ns_batch, d_batch)
+                    
+                else:
+                    agent.update(state, action, reward, next_state, done)
+                    state = next_state
+                
+                
             rewards.append(total_reward)
         all_rewards.append(rewards)
     
@@ -315,42 +332,7 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
 
 ############################################################################################################
 
-# Function for plotting results
-def plot_results(results_q, results_esarsa, env_name, use_replay):
-        plt.figure(figsize=(12, 6))
-        
-        for (epsilon, lr), (q_mean, q_std) in results_q.items():
-            linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
-            plt.plot(q_mean, label=f"Q-Learning ε={epsilon}, α={lr}", color='green', linestyle=linestyle)
-            plt.fill_between(range(len(q_mean)), q_mean - q_std, q_mean + q_std, color='green', alpha=0.3)
-            
-        for (epsilon, lr), (esarsa_mean, esarsa_std) in results_esarsa.items():
-            linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
-            plt.plot(esarsa_mean, label=f"Expected SARSA ε={epsilon}, α={lr}", color='red', linestyle=linestyle)
-            plt.fill_between(range(len(esarsa_mean)), esarsa_mean - esarsa_std, esarsa_mean + esarsa_std, color='red', alpha=0.3)
-        
-        plt.xlabel("Episodes")
-        plt.ylabel("Total Reward")
-        plt.title(f"{env_name} {'with' if use_replay else 'without'} Replay Buffer")
-        plt.legend()
-        
-         # Ensure results directory exists
-        results_dir = "../Results"
-        os.makedirs(results_dir, exist_ok=True)
-        
-        # Construct filename dynamically
-        filename = f"{env_name}_{'replay' if use_replay else 'no_replay'}.png"
-        filepath = os.path.join(results_dir, filename)
-        
-        # Save in multiple formats
-        plt.savefig(filepath)
-        plt.savefig(filepath.replace(".png", ".pdf"), format="pdf")
-
-        # Close the figure to free memory
-        plt.close()
-        
-
-############################################################################################################   
+   
 
 def render_Acrobot():
     # env = gym.make("Acrobot-v1", render_mode="human") 
@@ -368,28 +350,59 @@ def render_Acrobot():
 
 # render_Acrobot():
 
+############################################################################################################
 
-# Function for running experiments
-def run_experiment(environments, agent_classes, use_replay_options):
+# Function for plotting results
+def plot_results(results_q, results_esarsa, env_name, use_replay, epsilon, lr):
+    plt.figure(figsize=(12, 6))
+    
+    # Q-Learning plot
+    q_mean, q_std = results_q
+    linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
+    plt.plot(q_mean, label=f"Q-Learning ε={epsilon}, α={lr}", color='green', linestyle=linestyle)
+    plt.fill_between(range(len(q_mean)), q_mean - q_std, q_mean + q_std, color='green', alpha=0.3)
+    
+    # Expected SARSA plot
+    esarsa_mean, esarsa_std = results_esarsa
+    plt.plot(esarsa_mean, label=f"Expected SARSA ε={epsilon}, α={lr}", color='red', linestyle=linestyle)
+    plt.fill_between(range(len(esarsa_mean)), esarsa_mean - esarsa_std, esarsa_mean + esarsa_std, color='red', alpha=0.3)
+
+    plt.xlabel("Episodes")
+    plt.ylabel("Total Reward")
+    plt.title(f"{env_name} {'with' if use_replay else 'without'} Replay Buffer\nε={epsilon}, α={lr}")
+    plt.legend()
+
+    # Ensure results directory exists
+    results_dir = "../Results"
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Construct unique filename dynamically
+    filename = f"{env_name}_{'replay' if use_replay else 'no_replay'}_eps{epsilon}_lr{lr}.png"
+    filepath = os.path.join(results_dir, filename)
+
+    # Save the figure
+    plt.savefig(filepath)
+    plt.close()
+
+
+# Function for running experiments progressively
+def run_experiment(environments, agent_classes, use_replay_options, epsilons, learning_rates):
     for env_name in environments:
         for use_replay in use_replay_options:
-            results_q = {}
-            results_esarsa = {}
             for epsilon in tqdm(epsilons, desc=f"Epsilons for {env_name}", unit="epsilon"):
-                for lr in tqdm(learning_rates,desc=f"Learning Rates for {env_name}, epsilon={epsilon}", unit="lr", leave=False):
-                    # train Q-Learning and Expected SARSA agents
-                    q_mean, q_std = train(env_name, agent_classes[0], epsilon=epsilon, lr=lr, episodes=1000, trials=10)
-                    esarsa_mean, esarsa_std = train(env_name, agent_classes[1], epsilon=epsilon, lr=lr, episodes=1000, trials=10)
-                        
-                    results_q[(epsilon, lr)] = (q_mean, q_std)
-                    results_esarsa[(epsilon, lr)] = (esarsa_mean, esarsa_std)
-        plot_results(results_q, results_esarsa, env_name, use_replay)
+                for lr in tqdm(learning_rates, desc=f"Learning Rates for {env_name}, epsilon={epsilon}", unit="lr", leave=False):
+                    # Train Q-Learning and Expected SARSA agents
+                    q_mean, q_std = train(env_name, agent_classes[0], epsilon=epsilon, lr=lr, episodes=1000, trials=10, use_replay=use_replay)
+                    esarsa_mean, esarsa_std = train(env_name, agent_classes[1], epsilon=epsilon, lr=lr, episodes=1000, trials=10, use_replay=use_replay)
+
+                    # Plot and save immediately after training this configuration
+                    plot_results((q_mean, q_std), (esarsa_mean, esarsa_std), env_name, use_replay, epsilon, lr)
 
 # Running experiments
 if __name__ == "__main__":
     epsilons = [ 0.01 , 0.001, 0.0001] # https://edstem.org/us/courses/71533/discussion/6304331
     learning_rates = [ 0.25 , 0.125, 0.0625]
-    environments = ["ALE/Assault-ram-v5","Acrobot-v1"]
+    environments = [ "Acrobot-v1", "ALE/Assault-ram-v5" ]
     agent_classes = [ ExpectedSarsaAgent, QLearningAgent ]
     use_replay_options = [False, True]
-    run_experiment(environments, agent_classes, use_replay_options)
+    run_experiment(environments, agent_classes, use_replay_options, epsilons, learning_rates)
