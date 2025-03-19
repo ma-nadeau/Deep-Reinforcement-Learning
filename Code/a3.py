@@ -4,9 +4,12 @@ import torch.nn as nn           # type: ignore
 import torch.optim as optim     # type: ignore
 import matplotlib.pyplot as plt # type: ignore
 from tqdm import tqdm           # type: ignore
+import gymnasium as gym         # type: ignore
+import ale_py                   # type: ignore
 import numpy as np
 import random
 from collections import deque
+import os
 
 
 print("\n\n\n==========================================================\n\n\n")
@@ -196,7 +199,7 @@ class ExpectedSarsaAgent:
 ############################################################################################################
 
 class QLearningAgent: 
-    def __init__(self, state_dim, action_dim, hidden_dim=256, num_layers=2, gamma=0.99, learning_rate=0.001, epsilon=0.1):
+    def __init__(self, state_dim, action_dim, lr=0.01, gamma=0.99, epsilon=0.1, hidden_dim=256, num_layers=2):
         """
         Initializes the QLearningAgent.
 
@@ -214,7 +217,7 @@ class QLearningAgent:
         self.gamma = gamma
         self.epsilon = epsilon
         self.q_network = QNetwork(state_dim, action_dim, hidden_dim, num_layers)
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
 
     def select_action(self, state):
         """ 
@@ -315,10 +318,12 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
 # Function for plotting results
 def plot_results(results_q, results_esarsa, env_name, use_replay):
         plt.figure(figsize=(12, 6))
+        
         for (epsilon, lr), (q_mean, q_std) in results_q.items():
             linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
             plt.plot(q_mean, label=f"Q-Learning ε={epsilon}, α={lr}", color='green', linestyle=linestyle)
             plt.fill_between(range(len(q_mean)), q_mean - q_std, q_mean + q_std, color='green', alpha=0.3)
+            
         for (epsilon, lr), (esarsa_mean, esarsa_std) in results_esarsa.items():
             linestyle = '-' if lr == 0.25 else '--' if lr == 0.125 else ':'
             plt.plot(esarsa_mean, label=f"Expected SARSA ε={epsilon}, α={lr}", color='red', linestyle=linestyle)
@@ -328,11 +333,26 @@ def plot_results(results_q, results_esarsa, env_name, use_replay):
         plt.ylabel("Total Reward")
         plt.title(f"{env_name} {'with' if use_replay else 'without'} Replay Buffer")
         plt.legend()
-        plt.savefig("../Results/test.png")
+        
+         # Ensure results directory exists
+        results_dir = "../Results"
+        os.makedirs(results_dir, exist_ok=True)
+        
+        # Construct filename dynamically
+        filename = f"{env_name}_{'replay' if use_replay else 'no_replay'}.png"
+        filepath = os.path.join(results_dir, filename)
+        
+        # Save in multiple formats
+        plt.savefig(filepath)
+        plt.savefig(filepath.replace(".png", ".pdf"), format="pdf")
+
+        # Close the figure to free memory
+        plt.close()
+        
 
 ############################################################################################################   
 
-def render():
+def render_Acrobot():
     # env = gym.make("Acrobot-v1", render_mode="human") 
     env = gym.make("Acrobot-v1", render_mode="human")
     state, _ = env.reset()
@@ -346,7 +366,8 @@ def render():
             state, _ = env.reset()
     print("rendered")
 
-# render()
+# render_Acrobot():
+
 
 # Function for running experiments
 def run_experiment(environments, agent_classes, use_replay_options):
@@ -366,9 +387,9 @@ def run_experiment(environments, agent_classes, use_replay_options):
 
 # Running experiments
 if __name__ == "__main__":
-    epsilons = [0.01 ] #, 0.001, 0.0001] # https://edstem.org/us/courses/71533/discussion/6304331
-    learning_rates = [0.25 ] #, 0.125, 0.0625]
-    environments = ["Acrobot-v1", "ALE/Assault-v5"]
+    epsilons = [ 0.01 , 0.001, 0.0001] # https://edstem.org/us/courses/71533/discussion/6304331
+    learning_rates = [ 0.25 , 0.125, 0.0625]
+    environments = ["ALE/Assault-ram-v5","Acrobot-v1"]
     agent_classes = [ ExpectedSarsaAgent, QLearningAgent ]
     use_replay_options = [False, True]
     run_experiment(environments, agent_classes, use_replay_options)
