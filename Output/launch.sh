@@ -1,8 +1,8 @@
 #!/bin/bash
-#
+
 #SBATCH --partition=all                     # partition (queue)
 #SBATCH --gres=gpu:1                        # number of GPUs (per node)
-#SBATCH --cpus-per-task=8                   # number of cores
+#SBATCH --cpus-per-task=4                   # number of cores
 #SBATCH --mem=50G
 #SBATCH --propagate=NONE                    # IMPORTANT for long jobs
 #SBATCH --time=0-12:00                      # time (D-HH:MM)

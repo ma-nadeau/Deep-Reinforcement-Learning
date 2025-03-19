@@ -52,11 +52,11 @@ class QNetwork(nn.Module):
         self.initialize_weights()
     
     # initialize weights
-    def initialize_weights(self, initial_weights=0.0001):
+    def initialize_weights(self, initial_weights=0.001):
         """Initialize Weights
 
         Args:
-            initial_weights (float, optional): Initial range for uniform weight initialization. Defaults to 0.0001.
+            initial_weights (float, optional): Initial range for uniform weight initialization. Defaults to 0.001.
         """
         for m in self.model:
             if isinstance(m, nn.Linear):
@@ -295,12 +295,15 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1, use
     
     print( f"Env Made, Starting to Train: {env_name} with {'replay' if use_replay else 'no replay'} buffer, epsilon={epsilon}, lr={lr}")
     all_rewards = []
-    for trial in range(trials):
+    for trial in tqdm(range(trials), desc="Trials"):
         print(f"Trial: {trial+1}")
         agent = agent_class(state_dim, action_dim, lr=lr, epsilon=epsilon)
         buffer = ReplayBuffer() if use_replay else None
         rewards = []
+        pbar = tqdm(total=episodes, desc="Episodes", unit="episode")
         for episode in range(episodes):
+            if episode % 100 == 0 and episode != 0:
+                pbar.update(100)
             state, _ = env.reset()
             total_reward = 0
             done = False
@@ -327,10 +330,7 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1, use
                 
                 
             rewards.append(total_reward)
-        print(rewards)
-        all_rewards.append(rewards)
-    print(all_rewards)
-    
+        all_rewards.append(rewards)    
     env.close()
     return np.mean(all_rewards, axis=0), np.std(all_rewards, axis=0)
 
@@ -397,8 +397,8 @@ def run_experiment(environments, agent_classes, use_replay_options, epsilons, le
                 for lr in tqdm(learning_rates, desc=f"Learning Rates for {env_name}, epsilon={epsilon}", unit="lr", leave=False):
                     # Train Q-Learning and Expected SARSA agents
                     print(f"Training {env_name} with {'replay' if use_replay else 'no replay'} buffer, epsilon={epsilon}, lr={lr}")
-                    q_mean, q_std = train(env_name, agent_classes[0], epsilon=epsilon, lr=lr, episodes=1000, trials=10, use_replay=use_replay)
-                    esarsa_mean, esarsa_std = train(env_name, agent_classes[1], epsilon=epsilon, lr=lr, episodes=1000, trials=10, use_replay=use_replay)
+                    q_mean, q_std = train(env_name, agent_classes[0], epsilon=epsilon, lr=lr, episodes=10, trials=10, use_replay=use_replay)
+                    esarsa_mean, esarsa_std = train(env_name, agent_classes[1], epsilon=epsilon, lr=lr, episodes=10, trials=10, use_replay=use_replay)
 
                     # Plot and save immediately after training this configuration
                     plot_results((q_mean, q_std), (esarsa_mean, esarsa_std), env_name, use_replay, epsilon, lr)
@@ -407,7 +407,7 @@ def run_experiment(environments, agent_classes, use_replay_options, epsilons, le
 if __name__ == "__main__":
     learning_rates = [ 0.01 , 0.001, 0.0001] # https://edstem.org/us/courses/71533/discussion/6304331
     epsilons = [ 0.25 , 0.125, 0.0625]
-    environments = [ "Acrobot-v1", "ALE/Assault-ram-v5" ]
+    environments = [ "ALE/Assault-ram-v5", "Acrobot-v1" ]
     agent_classes = [ ExpectedSarsaAgent, QLearningAgent ]
     use_replay_options = [False, True]
     run_experiment(environments, agent_classes, use_replay_options, epsilons, learning_rates)
