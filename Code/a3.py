@@ -16,6 +16,8 @@ print("Code Running")
 print("\n\n\n==========================================================\n\n\n")
 
 
+############################################################################################################
+
 class QNetwork(nn.Module):
     # Q-Network
     def __init__(self, state_dim, action_dim, hidden_dim=256, num_layers=2):
@@ -70,6 +72,8 @@ class QNetwork(nn.Module):
             torch.Tensor: Output Q-values tensor.
         """
         return self.model(x)
+
+############################################################################################################
     
 class ReplayBuffer:
     def __init__(self, capacity=1_000_000):
@@ -111,7 +115,9 @@ class ReplayBuffer:
     
     def __len__(self):
         return len(self.buffer)
-    
+
+############################################################################################################
+
 class ExpectedSarsaAgent:
     def __init__(self, state_dim, action_dim, lr=0.01, gamma=0.99, epsilon=0.1, hidden_dim=256, num_layers=2):
         """
@@ -187,6 +193,8 @@ class ExpectedSarsaAgent:
         loss.backward() # backpropagation
         self.optimizer.step() # update weights
 
+############################################################################################################
+
 class QLearningAgent: 
     def __init__(self, state_dim, action_dim, hidden_dim=256, num_layers=2, gamma=0.99, learning_rate=0.001, epsilon=0.1):
         """
@@ -240,7 +248,7 @@ class QLearningAgent:
             None
         """
         # convert to tensors
-        print(state)
+        
         state = torch.FloatTensor(state)
         next_state = torch.FloatTensor(next_state)
         action = torch.tensor(action)
@@ -259,6 +267,8 @@ class QLearningAgent:
         self.optimizer.zero_grad() # set the gradients to zero
         loss.backward() # compute the gradients
         self.optimizer.step() # update the weights
+        
+############################################################################################################
 
 # Common training function for QLearning and ExpectedSarsa Agents
 def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
@@ -287,8 +297,10 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
             total_reward = 0
             done = False
             while not done:
+                if isinstance(state, tuple):
+                    state = state[0]
                 action = agent.select_action(state)
-                next_state, reward, done, _ = env.step(action)
+                next_state, reward, done, _, _ = env.step(action)
                 agent.update(state, action, reward, next_state, done)
                 state = next_state
                 total_reward += reward
@@ -297,6 +309,8 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1):
     
     env.close()
     return np.mean(all_rewards, axis=0), np.std(all_rewards, axis=0)
+
+############################################################################################################
 
 # Function for plotting results
 def plot_results(results_q, results_esarsa, env_name, use_replay):
@@ -315,6 +329,24 @@ def plot_results(results_q, results_esarsa, env_name, use_replay):
         plt.title(f"{env_name} {'with' if use_replay else 'without'} Replay Buffer")
         plt.legend()
         plt.savefig("../Results/test.png")
+
+############################################################################################################   
+
+def render():
+    # env = gym.make("Acrobot-v1", render_mode="human") 
+    env = gym.make("Acrobot-v1", render_mode="human")
+    state, _ = env.reset()
+
+    for _ in range(200):  # Run for a few steps to visualize
+        action = env.action_space.sample()  # Take a random action
+        state, reward, done, _, _ = env.step(action)
+        env.render()
+
+        if done:
+            state, _ = env.reset()
+    print("rendered")
+
+# render()
 
 # Function for running experiments
 def run_experiment(environments, agent_classes, use_replay_options):
