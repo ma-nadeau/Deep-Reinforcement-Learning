@@ -256,20 +256,20 @@ class QLearningAgent:
         next_state = torch.FloatTensor(next_state)
         action = torch.tensor(action)
         reward = torch.tensor(reward)
-        done = torch.tensor(done, dtype=torch.float32) # done = 1 if the episode is done, 0 otherwise
+        done = torch.tensor(done, dtype=torch.float32)          # done = 1 if the episode is done, 0 otherwise
         
-        q_values = self.q_network(state) # get the q-values
-        q_value = q_values[action] # get the q-value for the action taken
-        next_q_values = self.q_network(next_state).detach() # get the q-values for the next state
-        max_next_q = next_q_values.max() # get the maximum q-value
+        q_values = self.q_network(state)                        # get the q-values
+        q_value = q_values[action]                              # get the q-value for the action taken
+        next_q_values = self.q_network(next_state).detach()     # get the q-values for the next state
+        max_next_q = next_q_values.max()                        # get the maximum q-value
         
-        target = reward + (1 - done) * self.gamma * max_next_q # target = reward + gamma * max_next_q
-        loss = nn.MSELoss()(q_value, target) # loss = (q_value - target)^2
+        target = reward + (1 - done) * self.gamma * max_next_q  # target = reward + gamma * max_next_q
+        loss = nn.MSELoss()(q_value, target)                    # loss = (q_value - target)^2
         
         # optimize the model
-        self.optimizer.zero_grad() # set the gradients to zero
-        loss.backward() # compute the gradients
-        self.optimizer.step() # update the weights
+        self.optimizer.zero_grad()                              # set the gradients to zero
+        loss.backward()                                         # compute the gradients
+        self.optimizer.step()                                   # update the weights
         
 ############################################################################################################
 
@@ -293,8 +293,10 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1, use
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
     
+    print( f"Env Made, Starting to Train: {env_name} with {'replay' if use_replay else 'no replay'} buffer, epsilon={epsilon}, lr={lr}")
     all_rewards = []
-    for trial in tqdm(range(trials), desc="Trials"):
+    for trial in range(trials):
+        print(f"Trial: {trial+1}")
         agent = agent_class(state_dim, action_dim, lr=lr, epsilon=epsilon)
         buffer = ReplayBuffer() if use_replay else None
         rewards = []
@@ -325,7 +327,9 @@ def train(env_name, agent_class, episodes=5, epsilon=0.1, lr=0.01, trials=1, use
                 
                 
             rewards.append(total_reward)
+        print(rewards)
         all_rewards.append(rewards)
+    print(all_rewards)
     
     env.close()
     return np.mean(all_rewards, axis=0), np.std(all_rewards, axis=0)
@@ -392,6 +396,7 @@ def run_experiment(environments, agent_classes, use_replay_options, epsilons, le
             for epsilon in tqdm(epsilons, desc=f"Epsilons for {env_name}", unit="epsilon"):
                 for lr in tqdm(learning_rates, desc=f"Learning Rates for {env_name}, epsilon={epsilon}", unit="lr", leave=False):
                     # Train Q-Learning and Expected SARSA agents
+                    print(f"Training {env_name} with {'replay' if use_replay else 'no replay'} buffer, epsilon={epsilon}, lr={lr}")
                     q_mean, q_std = train(env_name, agent_classes[0], epsilon=epsilon, lr=lr, episodes=1000, trials=10, use_replay=use_replay)
                     esarsa_mean, esarsa_std = train(env_name, agent_classes[1], epsilon=epsilon, lr=lr, episodes=1000, trials=10, use_replay=use_replay)
 
@@ -400,8 +405,8 @@ def run_experiment(environments, agent_classes, use_replay_options, epsilons, le
 
 # Running experiments
 if __name__ == "__main__":
-    epsilons = [ 0.01 , 0.001, 0.0001] # https://edstem.org/us/courses/71533/discussion/6304331
-    learning_rates = [ 0.25 , 0.125, 0.0625]
+    learning_rates = [ 0.01 , 0.001, 0.0001] # https://edstem.org/us/courses/71533/discussion/6304331
+    epsilons = [ 0.25 , 0.125, 0.0625]
     environments = [ "Acrobot-v1", "ALE/Assault-ram-v5" ]
     agent_classes = [ ExpectedSarsaAgent, QLearningAgent ]
     use_replay_options = [False, True]
