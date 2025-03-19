@@ -453,7 +453,7 @@ def plot_results(results_q, results_esarsa, env_name, use_replay, epsilon, lr):
     plt.legend()
 
     # Ensure results directory exists
-    results_dir = "../Results"
+    results_dir = "Results"
     os.makedirs(results_dir, exist_ok=True)
 
     # Construct unique filename dynamically
@@ -486,7 +486,7 @@ def run_experiment(
                 ):
                     # Train Q-Learning and Expected SARSA agents
                     print(
-                        f"Training {env_name} with {'replay' if use_replay else 'no replay'} buffer, epsilon={epsilon}, lr={lr}"
+                        f"Training Q-Learning {env_name} with {'replay' if use_replay else 'no replay'} buffer, epsilon={epsilon}, lr={lr}"
                     )
                     q_mean, q_std = train(
                         env_name,
@@ -496,6 +496,10 @@ def run_experiment(
                         episodes=1000,
                         trials=10,
                         use_replay=use_replay,
+                    )
+                    
+                    print(
+                        f"Training Expected Sarsa {env_name} with {'replay' if use_replay else 'no replay'} buffer, epsilon={epsilon}, lr={lr}"
                     )
                     esarsa_mean, esarsa_std = train(
                         env_name,
@@ -508,6 +512,7 @@ def run_experiment(
                     )
 
                     # Plot and save immediately after training this configuration
+                    print("\n\n\n plot \n\n\n ")
                     plot_results(
                         (q_mean, q_std),
                         (esarsa_mean, esarsa_std),
