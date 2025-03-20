@@ -608,10 +608,10 @@ if __name__ == "__main__":
         0.001,
         0.01,
     ]  # https://edstem.org/us/courses/71533/discussion/6304331
-    epsilons = [0.25, 0.125, 0.0625]
+    epsilons = [0.0625, 0.125, 0.25]
     environments = ["ALE/Assault-ram-v5"]
     agent_classes = [ExpectedSarsaAgent, QLearningAgent]
-    use_replay_options = [False, True]
+    use_replay_options = [True]
     run_experiment(
         environments, agent_classes, use_replay_options, epsilons, learning_rates
     )
