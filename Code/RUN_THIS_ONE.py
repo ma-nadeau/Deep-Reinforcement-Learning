@@ -608,7 +608,12 @@ if __name__ == "__main__":
         0.001,
         0.01,
     ]  # https://edstem.org/us/courses/71533/discussion/6304331
-    epsilons = [0.0625, 0.125, 0.25]
+    
+    # **** IMPORTANT ****
+    # If you run on many computer or concurrently, comment line 615 and uncomment line 614
+    # epsilons = [0.125, 0.25, 0.0625]
+    epsilons = [0.0625, 0.125, 0.25] 
+    
     environments = ["ALE/Assault-ram-v5"]
     agent_classes = [ExpectedSarsaAgent, QLearningAgent]
     use_replay_options = [True]
