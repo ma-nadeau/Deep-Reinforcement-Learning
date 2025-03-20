@@ -474,6 +474,22 @@ def render_Acrobot():
 
 # render_Acrobot():
 
+
+def render_Assault():
+    # env = gym.make("Acrobot-v1", render_mode="human")
+    env = gym.make("ALE/Assault-arm-v5", render_mode="human")
+    state, _ = env.reset()
+
+    for _ in range(200):  # Run for a few steps to visualize
+        action = env.action_space.sample()  # Take a random action
+        state, reward, done, _, _ = env.step(action)
+        env.render()
+
+        if done:
+            state, _ = env.reset()
+    print("rendered")
+
+
 ############################################################################################################
 
 
@@ -585,36 +601,12 @@ def run_experiment(
 
 # Running experiments
 if __name__ == "__main__":
-    learning_rates = [
-        0.01,
-        0.001,
-        0.0001,
-    ]  # https://edstem.org/us/courses/71533/discussion/6304331
-    epsilons = [0.0625]
-    environments = [ "Acrobot-v1"]
-    agent_classes = [ExpectedSarsaAgent, QLearningAgent]
-    use_replay_options = [False]
-    run_experiment(
-        environments, agent_classes, use_replay_options, epsilons, learning_rates
-    )
     
-    learning_rates = [
-        0.01,
-        0.001,
+    # render_Assault() # Render Assault
+    learning_rates = [ 
         0.0001,
-    ]  # https://edstem.org/us/courses/71533/discussion/6304331
-    epsilons = [0.25, 0.125, 0.0625]
-    environments = ["Acrobot-v1"]
-    agent_classes = [ExpectedSarsaAgent, QLearningAgent]
-    use_replay_options = [True]
-    run_experiment(
-        environments, agent_classes, use_replay_options, epsilons, learning_rates
-    )
-    
-    learning_rates = [
-        0.01,
         0.001,
-        0.0001,
+        0.01,
     ]  # https://edstem.org/us/courses/71533/discussion/6304331
     epsilons = [0.25, 0.125, 0.0625]
     environments = ["ALE/Assault-ram-v5"]
