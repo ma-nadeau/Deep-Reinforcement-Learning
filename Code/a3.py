@@ -21,7 +21,6 @@ print("\n\n\n==========================================================\n\n\n")
 
 ############################################################################################################
 
-
 class QNetwork(nn.Module):
     # Q-Network
     def __init__(self, state_dim, action_dim, hidden_dim=256, num_layers=2):
@@ -59,7 +58,6 @@ class QNetwork(nn.Module):
         x = torch.relu(self.layer2(x))
         x = self.layer3(x)
         return x
-
 
 ############################################################################################################
 
@@ -101,11 +99,11 @@ class ReplayBuffer:
         batch = random.sample(self.buffer, batch_size)
         state, action, reward, next_state, done = zip(*batch)
         return (
-            np.array(state),
-            np.array(action),
-            np.array(reward),
-            np.array(next_state),
-            np.array(done),
+        np.array(state, dtype=np.float32),
+        np.array(action),
+        np.array(reward, dtype=np.float32),
+        np.array(next_state, dtype=np.float32),
+        np.array(done, dtype=np.float32),
         )
 
     def __len__(self):
@@ -113,7 +111,6 @@ class ReplayBuffer:
 
 
 ############################################################################################################
-
 
 class ExpectedSarsaAgent:
     def __init__(
@@ -212,6 +209,41 @@ class ExpectedSarsaAgent:
         self.optimizer.zero_grad()  # reset gradients
         loss.backward()  # backpropagation
         self.optimizer.step()  # update weights
+    
+    def batch_update(self, s_batch, a_batch, r_batch, ns_batch, d_batch):
+        """
+        Performs a batch update using sampled experiences from the replay buffer.
+        """
+        # Convert batches to tensors
+        s_batch = torch.FloatTensor(s_batch).to(self.device)
+        a_batch = torch.tensor(a_batch).to(self.device)
+        r_batch = torch.tensor(r_batch).to(self.device)
+        ns_batch = torch.FloatTensor(ns_batch).to(self.device)
+        d_batch = torch.tensor(d_batch, dtype=torch.float32).to(self.device)
+
+        # Get Q-values for all states in the batch
+        q_values = self.q_network(s_batch)
+
+        # Select the Q-values for the taken actions
+        q_value = q_values.gather(1, a_batch.unsqueeze(1))  # (batch_size, 1)
+
+        # Get the max Q-values for the next states in the batch
+        next_q_values = self.q_network(ns_batch).detach()
+        max_next_q = next_q_values.max(1)[0]  # (batch_size, )
+
+        # Calculate the expected Q-value for each experience in the batch
+        expected_q = (1 - self.epsilon) * max_next_q + self.epsilon * next_q_values.mean(dim=1)
+
+        # Compute the target for each experience in the batch
+        target = r_batch + (1 - d_batch) * self.gamma * expected_q
+
+        # Compute the loss (MSE loss)
+        loss = torch.nn.functional.mse_loss(q_value.squeeze(), target)
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
 
 ############################################################################################################
@@ -310,9 +342,39 @@ class QLearningAgent:
         loss.backward()  # compute the gradients
         self.optimizer.step()  # update the weights
 
+    def batch_update(self, s_batch, a_batch, r_batch, ns_batch, d_batch):
+        """
+        Perform a batch update using sampled experiences from the replay buffer.
+        """
+        # Convert batches to tensors
+        s_batch = torch.FloatTensor(s_batch).to(self.device)
+        a_batch = torch.tensor(a_batch).to(self.device)
+        r_batch = torch.tensor(r_batch).to(self.device)
+        ns_batch = torch.FloatTensor(ns_batch).to(self.device)
+        d_batch = torch.tensor(d_batch, dtype=torch.float32).to(self.device)
+
+        # Get current Q-values for all states in the batch
+        q_values = self.q_network(s_batch)
+
+        # Select the Q-values for the taken actions
+        q_value = q_values.gather(1, a_batch.unsqueeze(1))  # (batch_size, 1)
+
+        # Get the max Q-value for the next states in the batch
+        next_q_values = self.q_network(ns_batch).detach()
+        max_next_q = next_q_values.max(1)[0]  # (batch_size, )
+
+        # Compute the target (TD target) for each experience
+        target = r_batch + (1 - d_batch) * self.gamma * max_next_q
+
+        # Compute the loss
+        loss = torch.nn.functional.mse_loss(q_value.squeeze(), target)
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
 ############################################################################################################
-
 
 # Common training function for QLearning and ExpectedSarsa Agents
 def train(
@@ -362,8 +424,12 @@ def train(
             while not done:
                 if isinstance(state, tuple):
                     state = state[0]
+                if env_name == "ALE/Assault-ram-v5":
+                    state = state / 255.0
                 action = agent.select_action(state)
                 next_state, reward, terminated, truncated, _ = env.step(action)
+                if env_name == "ALE/Assault-ram-v5":
+                    next_state = next_state / 255.0
                 done = terminated or truncated
                 total_reward += reward
 
@@ -387,7 +453,6 @@ def train(
         all_rewards.append(rewards)
     env.close()
     return np.mean(all_rewards, axis=0), np.std(all_rewards, axis=0)
-
 
 ############################################################################################################
 
@@ -526,7 +591,7 @@ if __name__ == "__main__":
         0.0001,
     ]  # https://edstem.org/us/courses/71533/discussion/6304331
     epsilons = [0.25, 0.125, 0.0625]
-    environments = ["Acrobot-v1", "ALE/Assault-ram-v5"]
+    environments = ["ALE/Assault-ram-v5"]
     agent_classes = [ExpectedSarsaAgent, QLearningAgent]
     use_replay_options = [False, True]
     run_experiment(

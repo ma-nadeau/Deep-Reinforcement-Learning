@@ -1,14 +1,14 @@
 #!/bin/bash
 
 #SBATCH --partition=all                     # partition (queue)
-#SBATCH --gres=gpu:1                        # number of GPUs (per node)
-#SBATCH --cpus-per-task=4                   # number of cores
+#SBATCH --gres=gpu:0                        # number of GPUs (per node)
+#SBATCH --cpus-per-task=1                   # number of cores
 #SBATCH --mem=50G
 #SBATCH --propagate=NONE                    # IMPORTANT for long jobs
-#SBATCH --time=0-12:00                      # time (D-HH:MM)
+#SBATCH --time=3-00:00                      # time (D-HH:MM)
 #SBATCH --output=experiment_output.log
 #SBATCH --error=experiment_error.log
-#SBATCH --qos=comp579-1gpu-12h
+#SBATCH --qos=comp579-0gpu-4cpu-72h
 #SBATCH --account=winter2025-comp579
 
 
