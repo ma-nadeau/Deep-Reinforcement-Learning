@@ -447,10 +447,17 @@ def train(
                 else:
                     agent.update(state, action, reward, next_state, done)
                     state = next_state
-
             rewards.append(total_reward)
         pbar.close()
+        
         all_rewards.append(rewards)
+        if env_name == "ALE/Assault-ram-v5":
+            env_name = "Assault-ram-v5"
+        filename = (f"{env_name}_{'replay' if use_replay else 'no_replay'}_eps{epsilon}_lr{lr}.png")
+        with open(f"total_rewards_{filename}.txt", "a") as f:
+            f.write(f"Trial: {trial+1}, Episode: {episode+1}, Total Reward:\n\n {all_rewards}\n")
+        
+        
     env.close()
     return np.mean(all_rewards, axis=0), np.std(all_rewards, axis=0)
 
@@ -473,6 +480,22 @@ def render_Acrobot():
 
 
 # render_Acrobot():
+
+
+def render_Assault():
+    # env = gym.make("Acrobot-v1", render_mode="human")
+    env = gym.make("ALE/Assault-arm-v5", render_mode="human")
+    state, _ = env.reset()
+
+    for _ in range(200):  # Run for a few steps to visualize
+        action = env.action_space.sample()  # Take a random action
+        state, reward, done, _, _ = env.step(action)
+        env.render()
+
+        if done:
+            state, _ = env.reset()
+    print("rendered")
+
 
 ############################################################################################################
 
@@ -559,7 +582,7 @@ def run_experiment(
                         epsilon=epsilon,
                         lr=lr,
                         episodes=1000,
-                        trials=10,
+                        trials=2,
                         use_replay=use_replay,
                     )
                     esarsa_mean, esarsa_std = train(
@@ -568,7 +591,7 @@ def run_experiment(
                         epsilon=epsilon,
                         lr=lr,
                         episodes=1000,
-                        trials=10,
+                        trials=2,
                         use_replay=use_replay,
                     )
 
@@ -585,15 +608,22 @@ def run_experiment(
 
 # Running experiments
 if __name__ == "__main__":
-    learning_rates = [
-        0.01,
-        0.001,
+    
+    # render_Assault() # Render Assault
+    learning_rates = [ 
         0.0001,
+        0.001,
+        0.01,
     ]  # https://edstem.org/us/courses/71533/discussion/6304331
-    epsilons = [0.25, 0.125, 0.0625]
+    
+    # **** IMPORTANT ****
+    # If you run on many computer or concurrently, comment line 615 and uncomment line 614
+    # epsilons = [0.125, 0.25, 0.0625]
+    epsilons = [ 0.125, 0.25, 0.0625] 
+    
     environments = ["ALE/Assault-ram-v5"]
     agent_classes = [ExpectedSarsaAgent, QLearningAgent]
-    use_replay_options = [False, True]
+    use_replay_options = [False]
     run_experiment(
         environments, agent_classes, use_replay_options, epsilons, learning_rates
     )
