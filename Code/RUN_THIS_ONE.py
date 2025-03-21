@@ -447,10 +447,21 @@ def train(
                 else:
                     agent.update(state, action, reward, next_state, done)
                     state = next_state
-
             rewards.append(total_reward)
         pbar.close()
+        
         all_rewards.append(rewards)
+        if env_name == "ALE/Assault-ram-v5":
+            env_name = "Assault-ram-v5"
+            
+        if agent_class == ExpectedSarsaAgent:
+            filename = (f"{env_name}_{'replay' if use_replay else 'no_replay'}_eps{epsilon}_lr{lr}_expected_sarsa.png")
+        elif agent_class == QLearningAgent:
+            filename = (f"{env_name}_{'replay' if use_replay else 'no_replay'}_eps{epsilon}_lr{lr}_q_learning.png")
+        with open(f"total_rewards_{filename}.txt", "a") as f:
+            f.write(f"Trial: {trial+1}, Episode: {episode+1}, Total Reward:\n\n {all_rewards}\n")
+        
+        
     env.close()
     return np.mean(all_rewards, axis=0), np.std(all_rewards, axis=0)
 
@@ -534,7 +545,7 @@ def plot_results(results_q, results_esarsa, env_name, use_replay, epsilon, lr):
     plt.legend()
 
     # Ensure results directory exists
-    results_dir = "Results"
+    results_dir = "../Results"
     os.makedirs(results_dir, exist_ok=True)
 
     # Construct unique filename dynamically
@@ -575,7 +586,7 @@ def run_experiment(
                         epsilon=epsilon,
                         lr=lr,
                         episodes=1000,
-                        trials=10,
+                        trials=2,
                         use_replay=use_replay,
                     )
                     esarsa_mean, esarsa_std = train(
@@ -584,7 +595,7 @@ def run_experiment(
                         epsilon=epsilon,
                         lr=lr,
                         episodes=1000,
-                        trials=10,
+                        trials=2,
                         use_replay=use_replay,
                     )
 
