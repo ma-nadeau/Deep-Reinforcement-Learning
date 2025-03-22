@@ -1,0 +1,523 @@
+# Extremely similar code to acrobot, but normalized state value.
+# Run in IDE, so code output is saved to files.
+
+# Set random seeds for reproducibility
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class PolicyNetwork(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(PolicyNetwork, self).__init__()
+        self.fc1 = nn.Linear(state_dim, 64)  # First hidden layer (state_dim → 64)
+        self.fc2 = nn.Linear(64, 64)  # Second hidden layer (64 → 64)
+        self.fc3 = nn.Linear(64, action_dim)  # Output layer (64 → action_dim)
+
+    def forward(self, state):
+        x = F.relu(self.fc1(state))  # Apply first layer and ReLU activation
+        x = F.relu(self.fc2(x))  # Apply second layer and ReLU activation
+        x = self.fc3(x)  # Output raw action preferences z(s, a)
+        return x  # produce vector of size action_dim
+
+    def get_action_prob(self, state, temperature=1.0):
+        #converts raw scores into prob distribution using softmax
+        z = self.forward(state)
+        # Boltzmann policy as in equation (3)
+        action_probs = F.softmax(z / temperature, dim=-1)
+        return action_probs
+
+    # sample an action from the probability distribution
+    def get_action(self, state, temperature=1.0):
+        action_probs = self.get_action_prob(state, temperature)
+        dist = Categorical(action_probs)
+        action = dist.sample()
+        log_prob = dist.log_prob(action)
+        return action.item(), log_prob  #outputs selected action and log prob of that action
+
+
+# Define the neural network for the value function (for Actor-Critic)
+# Outputs a single scalar estimating how good a state is.
+class ValueNetwork(nn.Module):
+    def __init__(self, state_dim):
+        super(ValueNetwork, self).__init__()
+        self.fc1 = nn.Linear(state_dim, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 1)  #outputs single value
+
+    def forward(self, state):
+        x = F.relu(self.fc1(state))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)  # No activation for value output
+        return x
+
+
+def set_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+def reinforce(env_name, num_episodes, temperature, learning_rate=0.001, gamma=0.99, seed=42, output_file="reinforce_rewards.txt"):
+    env = gym.make(env_name, obs_type="ram")
+    set_seed(seed)
+
+    state_dim = env.observation_space.shape[0]
+    action_dim = env.action_space.n
+
+    policy = PolicyNetwork(state_dim, action_dim).to(device)
+    optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
+
+    rewards_history = []
+
+    with open(output_file, 'a') as f:
+        for episode in range(num_episodes):
+            state, _ = env.reset(seed=seed + episode)
+            state = state / 255.0
+
+            log_probs = []
+            rewards = []
+            episode_reward = 0
+
+            done = False
+            while not done:
+                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+                action, log_prob = policy.get_action(state_tensor, temperature)
+
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
+
+                next_state = next_state / 255.0
+                log_probs.append(log_prob)
+                rewards.append(reward)
+                episode_reward += reward
+                state = next_state
+
+            f.write(f"Episode {episode}, Reward: {episode_reward}\n")  # Write to file
+            rewards_history.append(episode_reward)
+
+            if episode % 100 == 0:
+                print(f"Episode {episode}, Reward: {episode_reward}")
+
+    env.close()
+    return rewards_history
+
+
+def actor_critic(env_name, num_episodes, temperature, learning_rate=0.001, gamma=0.99, seed=42, output_file="actor_critic_rewards.txt"):
+    env = gym.make(env_name, obs_type="ram")
+    set_seed(seed)
+
+    state_dim = env.observation_space.shape[0]
+    action_dim = env.action_space.n
+
+    policy = PolicyNetwork(state_dim, action_dim).to(device)
+    value = ValueNetwork(state_dim).to(device)
+
+    policy_optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
+    value_optimizer = optim.Adam(value.parameters(), lr=learning_rate)
+
+    rewards_history = []
+
+    with open(output_file, 'a') as f:
+        for episode in range(num_episodes):
+            state, _ = env.reset(seed=seed + episode)
+            state = state / 255.0
+
+            episode_reward = 0
+            done = False
+
+            while not done:
+                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+                action, log_prob = policy.get_action(state_tensor, temperature)
+                value_pred = value(state_tensor)
+
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
+
+                next_state = next_state / 255.0
+                next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(device)
+                next_value_pred = value(next_state_tensor)
+
+                target_value = reward + (gamma * next_value_pred * (1 - done))
+                advantage = target_value - value_pred
+
+                policy_loss = -log_prob * advantage.detach()
+                policy_optimizer.zero_grad()
+                policy_loss.backward()
+                policy_optimizer.step()
+
+                value_loss = advantage.pow(2)
+                value_optimizer.zero_grad()
+                value_loss.backward()
+                value_optimizer.step()
+
+                episode_reward += reward
+                state = next_state
+
+            f.write(f"Episode {episode}, Reward: {episode_reward}\n")  # Write to file
+            rewards_history.append(episode_reward)
+
+            if episode % 100 == 0:
+                print(f"Episode {episode}, Reward: {episode_reward}")
+
+    env.close()
+    return rewards_history
+
+
+# Linear scheduler for decreasing temperature
+def linear_temp_scheduler(init_temp, final_temp, num_episodes):
+    def get_temp(episode):
+        return init_temp - (init_temp - final_temp) * episode / num_episodes
+
+    return get_temp
+
+def run_experiments(env_name, num_episodes=1, num_seeds=10, start_seed=0):
+    # Configuration 1: Fixed temperature
+    fixed_temp = 1.0
+
+    # Configuration 2: Decreasing temperature
+    temp_scheduler = linear_temp_scheduler(2.0, 0.1, num_episodes)
+
+    # Store results
+    reinforce_fixed_rewards = []
+    reinforce_decreasing_rewards = []
+    actor_critic_fixed_rewards = []
+    actor_critic_decreasing_rewards = []
+
+    # Define output files
+    reinforce_fixed_file = "reinforce_fixed_rewards.txt"
+    reinforce_decreasing_file = "reinforce_decreasing_rewards.txt"
+    actor_critic_fixed_file = "actor_critic_fixed_rewards.txt"
+    actor_critic_decreasing_file = "actor_critic_decreasing_rewards.txt"
+
+    # Clear previous logs (if existing)
+    for file in [reinforce_fixed_file, reinforce_decreasing_file, actor_critic_fixed_file, actor_critic_decreasing_file]:
+        open(file, "w").close()  # Create empty file
+
+    for seed in range(start_seed, start_seed + num_seeds):
+        print(f"Running experiment with seed {seed}")
+
+        # REINFORCE with fixed temperature
+        rewards = reinforce(env_name, num_episodes, fixed_temp, seed=seed, output_file=reinforce_fixed_file)
+        reinforce_fixed_rewards.append(rewards)
+
+        # REINFORCE with decreasing temperature
+        rewards = []
+        env = gym.make(env_name, obs_type="ram")
+        set_seed(seed)
+
+        state_dim = env.observation_space.shape[0]
+        action_dim = env.action_space.n
+
+        policy = PolicyNetwork(state_dim, action_dim).to(device)
+        optimizer = optim.Adam(policy.parameters(), lr=0.001)
+
+        with open(reinforce_decreasing_file, 'a') as f:
+            for episode in range(num_episodes):
+                current_temp = temp_scheduler(episode)
+                state, _ = env.reset(seed=seed + episode)
+                state = state / 255.0
+
+                log_probs = []
+                episode_rewards = []
+                episode_reward = 0
+
+                done = False
+                while not done:
+                    state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+                    action, log_prob = policy.get_action(state_tensor, current_temp)
+
+                    next_state, reward, terminated, truncated, _ = env.step(action)
+                    done = terminated or truncated
+
+                    next_state = next_state / 255.0
+                    log_probs.append(log_prob)
+                    episode_rewards.append(reward)
+                    episode_reward += reward
+                    state = next_state
+
+                f.write(f"Episode {episode}, Reward: {episode_reward}\n")  # Write to file
+                rewards.append(episode_reward)
+
+                if episode % 100 == 0:
+                    print(f"Episode {episode}, Reward: {episode_reward}")
+
+        env.close()
+        reinforce_decreasing_rewards.append(rewards)
+
+        # Actor-Critic with fixed temperature
+        rewards = actor_critic(env_name, num_episodes, fixed_temp, seed=seed, output_file=actor_critic_fixed_file)
+        actor_critic_fixed_rewards.append(rewards)
+
+        # Actor-Critic with decreasing temperature
+        rewards = []
+        env = gym.make(env_name, obs_type="ram")
+        set_seed(seed)
+
+        state_dim = env.observation_space.shape[0]
+        action_dim = env.action_space.n
+
+        policy = PolicyNetwork(state_dim, action_dim).to(device)
+        value = ValueNetwork(state_dim).to(device)
+
+        policy_optimizer = optim.Adam(policy.parameters(), lr=0.001)
+        value_optimizer = optim.Adam(value.parameters(), lr=0.001)
+
+        with open(actor_critic_decreasing_file, 'a') as f:
+            for episode in range(num_episodes):
+                current_temp = temp_scheduler(episode)
+                state, _ = env.reset(seed=seed + episode)
+                state = state / 255.0
+
+                episode_reward = 0
+                done = False
+
+                while not done:
+                    state_tensor = torch.FloatTensor(state).unsqueeze(0).to(device)
+                    action, log_prob = policy.get_action(state_tensor, current_temp)
+                    value_pred = value(state_tensor)
+
+                    next_state, reward, terminated, truncated, _ = env.step(action)
+                    done = terminated or truncated
+
+                    next_state = next_state / 255.0
+                    next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(device)
+                    next_value_pred = value(next_state_tensor)
+
+                    target_value = reward + (0.99 * next_value_pred * (1 - done))
+                    advantage = target_value - value_pred
+
+                    policy_loss = -log_prob * advantage.detach()
+                    policy_optimizer.zero_grad()
+                    policy_loss.backward()
+                    policy_optimizer.step()
+
+                    value_loss = advantage.pow(2)
+                    value_optimizer.zero_grad()
+                    value_loss.backward()
+                    value_optimizer.step()
+
+                    episode_reward += reward
+                    state = next_state
+
+                f.write(f"Episode {episode}, Reward: {episode_reward}\n")  # Write to file
+                rewards.append(episode_reward)
+
+                if episode % 100 == 0:
+                    print(f"Episode {episode}, Reward: {episode_reward}")
+
+        env.close()
+        actor_critic_decreasing_rewards.append(rewards)
+
+    return (reinforce_fixed_rewards, reinforce_decreasing_rewards,
+            actor_critic_fixed_rewards, actor_critic_decreasing_rewards)
+
+
+def plot_results(results, env_name):
+    reinforce_fixed, reinforce_decreasing, actor_critic_fixed, actor_critic_decreasing = results
+
+    # Convert to numpy arrays
+    reinforce_fixed = np.array(reinforce_fixed)
+    reinforce_decreasing = np.array(reinforce_decreasing)
+    actor_critic_fixed = np.array(actor_critic_fixed)
+    actor_critic_decreasing = np.array(actor_critic_decreasing)
+
+    # Create figure
+    plt.figure(figsize=(10, 6))
+    plt.title(f"Results for {env_name}")
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+
+    # Calculate mean and std for REINFORCE (Fixed)
+    reinforce_fixed_mean = np.mean(reinforce_fixed, axis=0)
+    reinforce_fixed_std = np.std(reinforce_fixed, axis=0)
+
+    # Calculate mean and std for REINFORCE (Decreasing)
+    reinforce_decreasing_mean = np.mean(reinforce_decreasing, axis=0)
+    reinforce_decreasing_std = np.std(reinforce_decreasing, axis=0)
+
+    # Calculate mean and std for Actor-Critic (Fixed)
+    actor_critic_fixed_mean = np.mean(actor_critic_fixed, axis=0)
+    actor_critic_fixed_std = np.std(actor_critic_fixed, axis=0)
+
+    # Calculate mean and std for Actor-Critic (Decreasing)
+    actor_critic_decreasing_mean = np.mean(actor_critic_decreasing, axis=0)
+    actor_critic_decreasing_std = np.std(actor_critic_decreasing, axis=0)
+
+    # Plot REINFORCE (Fixed)
+    plt.plot(reinforce_fixed_mean, color='green', label='REINFORCE (Fixed Temp)', linestyle='-')
+    plt.fill_between(
+        range(len(reinforce_fixed_mean)),
+        reinforce_fixed_mean - reinforce_fixed_std,
+        reinforce_fixed_mean + reinforce_fixed_std,
+        alpha=0.3,
+        color='green'
+    )
+
+    # Plot REINFORCE (Decreasing)
+    plt.plot(reinforce_decreasing_mean, color='green', label='REINFORCE (Decreasing Temp)', linestyle='--')
+    plt.fill_between(
+        range(len(reinforce_decreasing_mean)),
+        reinforce_decreasing_mean - reinforce_decreasing_std,
+        reinforce_decreasing_mean + reinforce_decreasing_std,
+        alpha=0.3,
+        color='green'
+    )
+
+    # Plot Actor-Critic (Fixed)
+    plt.plot(actor_critic_fixed_mean, color='red', label='Actor-Critic (Fixed Temp)', linestyle='-')
+    plt.fill_between(
+        range(len(actor_critic_fixed_mean)),
+        actor_critic_fixed_mean - actor_critic_fixed_std,
+        actor_critic_fixed_mean + actor_critic_fixed_std,
+        alpha=0.3,
+        color='red'
+    )
+
+    # Plot Actor-Critic (Decreasing)
+    plt.plot(actor_critic_decreasing_mean, color='red', label='Actor-Critic (Decreasing Temp)', linestyle='--')
+    plt.fill_between(
+        range(len(actor_critic_decreasing_mean)),
+        actor_critic_decreasing_mean - actor_critic_decreasing_std,
+        actor_critic_decreasing_mean + actor_critic_decreasing_std,
+        alpha=0.3,
+        color='red'
+    )
+
+    plt.legend()
+    plt.savefig(f"{env_name.replace('/', '_')}_results.png")
+    plt.show()
+
+
+def moving_average(data, window_size=10):
+    """Compute moving average with a given window size."""
+    return np.convolve(data, np.ones(window_size) / window_size, mode='valid')
+
+
+def plot_results_smoothed(results, env_name, window_size=10):
+    reinforce_fixed, reinforce_decreasing, actor_critic_fixed, actor_critic_decreasing = results
+
+    # Convert to numpy arrays
+    reinforce_fixed = np.array(reinforce_fixed)
+    reinforce_decreasing = np.array(reinforce_decreasing)
+    actor_critic_fixed = np.array(actor_critic_fixed)
+    actor_critic_decreasing = np.array(actor_critic_decreasing)
+
+    # Create figure
+    plt.figure(figsize=(10, 6))
+    plt.title(f"Results for {env_name} (Smoothed)")
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+
+    # Compute mean over seeds
+    reinforce_fixed_mean = np.mean(reinforce_fixed, axis=0)
+    reinforce_decreasing_mean = np.mean(reinforce_decreasing, axis=0)
+    actor_critic_fixed_mean = np.mean(actor_critic_fixed, axis=0)
+    actor_critic_decreasing_mean = np.mean(actor_critic_decreasing, axis=0)
+
+    # Compute mean over seeds
+    reinforce_fixed_std = np.std(reinforce_fixed, axis=0)
+    reinforce_decreasing_std = np.std(reinforce_decreasing, axis=0)
+    actor_critic_fixed_std = np.std(actor_critic_fixed, axis=0)
+    actor_critic_decreasing_std = np.std(actor_critic_decreasing, axis=0)
+
+    # Apply smoothing
+    reinforce_fixed_smooth = moving_average(reinforce_fixed_mean, window_size)
+    reinforce_decreasing_smooth = moving_average(reinforce_decreasing_mean, window_size)
+    actor_critic_fixed_smooth = moving_average(actor_critic_fixed_mean, window_size)
+    actor_critic_decreasing_smooth = moving_average(actor_critic_decreasing_mean, window_size)
+
+    # Plot REINFORCE (Fixed)
+    plt.plot(reinforce_fixed_smooth, color='green', label='REINFORCE (Fixed Temp)', linestyle='-')
+
+    # Plot REINFORCE (Decreasing)
+    plt.plot(reinforce_decreasing_smooth, color='green', label='REINFORCE (Decreasing Temp)', linestyle='--')
+
+    # Plot Actor-Critic (Fixed)
+    plt.plot(actor_critic_fixed_smooth, color='red', label='Actor-Critic (Fixed Temp)', linestyle='-')
+
+    # Plot Actor-Critic (Decreasing)
+    plt.plot(actor_critic_decreasing_smooth, color='red', label='Actor-Critic (Decreasing Temp)', linestyle='--')
+
+    plt.legend()
+    plt.savefig(f"{env_name.replace('/', '_')}_results_smoothed.png")
+    plt.show()
+
+
+def plot_results_smoothed_fill(results, env_name, window_size=10):
+    reinforce_fixed, reinforce_decreasing, actor_critic_fixed, actor_critic_decreasing = results
+
+    # Convert to numpy arrays
+    reinforce_fixed = np.array(reinforce_fixed)
+    reinforce_decreasing = np.array(reinforce_decreasing)
+    actor_critic_fixed = np.array(actor_critic_fixed)
+    actor_critic_decreasing = np.array(actor_critic_decreasing)
+
+    # Create figure
+    plt.figure(figsize=(10, 6))
+    plt.title(f"Results for {env_name} (Smoothed) + Standard Deviation")
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+
+    # Compute mean and standard deviation over seeds
+    reinforce_fixed_mean = np.mean(reinforce_fixed, axis=0)
+    reinforce_decreasing_mean = np.mean(reinforce_decreasing, axis=0)
+    actor_critic_fixed_mean = np.mean(actor_critic_fixed, axis=0)
+    actor_critic_decreasing_mean = np.mean(actor_critic_decreasing, axis=0)
+
+    reinforce_fixed_std = np.std(reinforce_fixed, axis=0)
+    reinforce_decreasing_std = np.std(reinforce_decreasing, axis=0)
+    actor_critic_fixed_std = np.std(actor_critic_fixed, axis=0)
+    actor_critic_decreasing_std = np.std(actor_critic_decreasing, axis=0)
+
+    # Apply smoothing
+    reinforce_fixed_smooth = moving_average(reinforce_fixed_mean, window_size)
+    reinforce_decreasing_smooth = moving_average(reinforce_decreasing_mean, window_size)
+    actor_critic_fixed_smooth = moving_average(actor_critic_fixed_mean, window_size)
+    actor_critic_decreasing_smooth = moving_average(actor_critic_decreasing_mean, window_size)
+
+    # Adjust std for smoothing
+    reinforce_fixed_std_smooth = moving_average(reinforce_fixed_std, window_size)
+    reinforce_decreasing_std_smooth = moving_average(reinforce_decreasing_std, window_size)
+    actor_critic_fixed_std_smooth = moving_average(actor_critic_fixed_std, window_size)
+    actor_critic_decreasing_std_smooth = moving_average(actor_critic_decreasing_std, window_size)
+
+    x_range = np.arange(len(reinforce_fixed_smooth))  # Adjust x-axis range after smoothing
+
+    # Plot REINFORCE (Fixed)
+    plt.plot(x_range, reinforce_fixed_smooth, color='green', label='REINFORCE (Fixed Temp)', linestyle='-')
+    plt.fill_between(x_range, reinforce_fixed_smooth - reinforce_fixed_std_smooth,
+                     reinforce_fixed_smooth + reinforce_fixed_std_smooth, color='limegreen', alpha=0.3,
+                     edgecolor='green')
+
+    # Plot REINFORCE (Decreasing)
+    plt.plot(x_range, reinforce_decreasing_smooth, color='darkgreen', label='REINFORCE (Decreasing Temp)',
+             linestyle='--')
+    plt.fill_between(x_range, reinforce_decreasing_smooth - reinforce_decreasing_std_smooth,
+                     reinforce_decreasing_smooth + reinforce_decreasing_std_smooth, color='darkolivegreen', alpha=0.3,
+                     edgecolor='darkgreen')
+
+    # Plot Actor-Critic (Fixed)
+    plt.plot(x_range, actor_critic_fixed_smooth, color='red', label='Actor-Critic (Fixed Temp)', linestyle='-')
+    plt.fill_between(x_range, actor_critic_fixed_smooth - actor_critic_fixed_std_smooth,
+                     actor_critic_fixed_smooth + actor_critic_fixed_std_smooth, color='lightcoral', alpha=0.3,
+                     edgecolor='red')
+
+    # Plot Actor-Critic (Decreasing)
+    plt.plot(x_range, actor_critic_decreasing_smooth, color='darkred', label='Actor-Critic (Decreasing Temp)',
+             linestyle='--')
+    plt.fill_between(x_range, actor_critic_decreasing_smooth - actor_critic_decreasing_std_smooth,
+                     actor_critic_decreasing_smooth + actor_critic_decreasing_std_smooth, color='brown', alpha=0.3,
+                     edgecolor='darkred')
+
+    plt.legend()
+    plt.savefig(f"{env_name.replace('/', '_')}_results_smoothed.png")
+    plt.show()
+
+if __name__ == '__main__':
+    print("Running experiments for ALE/Assault-v5")
+    assault_results = run_experiments("ALE/Assault-v5")
+    plot_results(assault_results, "ALE/Assault-v5")
+
